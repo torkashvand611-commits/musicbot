@@ -83,11 +83,14 @@ def process(audio, text):
 
 def main():
     updates = api("getUpdates", data={"timeout": 0})
+    print("pending updates:", len(updates))
     song = None
     confirm_to = None
     for up in updates:
         uid = up["update_id"]
         m = up.get("message")
+        kinds = [k for k in (m or {}) if k in ("audio", "text", "document", "voice", "video", "photo")]
+        print("message kinds:", kinds, "| sender is owner:", bool(m) and m.get("from", {}).get("id") == OWNER)
         if not m or m.get("from", {}).get("id") != OWNER:
             if song is None:
                 confirm_to = uid
@@ -103,7 +106,7 @@ def main():
                 say("✅ فرستاده شد")
             except Exception as ex:
                 say("❌ خطا: بازه رو درست بفرست (مثل 1:10-1:35) و آهنگ رو دوباره فوروارد کن.")
-                print(ex)
+                print("error:", ex)
             song = None
             confirm_to = uid
         elif song is None:
