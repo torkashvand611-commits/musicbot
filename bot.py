@@ -34,6 +34,22 @@ def build_caption(title, performer, extra):
         top = default
     return (top + "\n" + FOOTER).strip()
 
+def get_cover(d):
+    # اول عکس پروفایل خود ربات، اگه نشد cover.jpg
+    try:
+        me = api("getMe")
+        res = api("getUserProfilePhotos", data={"user_id": me["id"], "limit": 1})
+        if res["total_count"] > 0:
+            fid = res["photos"][0][-1]["file_id"]
+            p = api("getFile", data={"file_id": fid})["file_path"]
+            out = f"{d}/cover_bot.jpg"
+            with open(out, "wb") as f:
+                f.write(requests.get(f"{FILE_API}/{p}", timeout=60).content)
+            return out
+    except Exception as ex:
+        print("profile photo failed:", ex)
+    return "cover.jpg" if os.path.exists("cover.jpg") else None
+
 def process(audio, text):
     lines = text.strip().split("\n")
     s, e = re.split(r"\s*[-–]\s*", lines[0].strip())
@@ -54,8 +70,9 @@ def process(audio, text):
             "-i", src, "-vn", "-c:a", "libopus", "-b:a", "48k",
             "-ar", "48000", "-ac", "1", voice], check=True)
         files = {"audio": (audio.get("file_name") or "song.mp3", open(src, "rb"))}
-        if os.path.exists("cover.jpg"):
-            subprocess.run(["ffmpeg", "-y", "-i", "cover.jpg", "-vf",
+        cover = get_cover(d)
+        if cover:
+            subprocess.run(["ffmpeg", "-y", "-i", cover, "-vf",
                 "scale=320:320:force_original_aspect_ratio=increase,crop=320:320",
                 "-q:v", "6", thumb], check=True)
             files["thumbnail"] = ("t.jpg", open(thumb, "rb"))
