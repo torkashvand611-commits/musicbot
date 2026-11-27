@@ -2,7 +2,11 @@ import os, re, subprocess, tempfile, requests
 
 TOKEN = os.environ["BOT_TOKEN"]
 CHANNEL = os.environ["CHANNEL"]
-OWNER = int(os.environ["OWNER_ID"])
+
+# آیدی خودت (از Secret) + آیدی ادمین
+OWNERS = {int(os.environ["OWNER_ID"].split(",")[0])}
+OWNERS |= {268366064}
+
 API = f"https://api.telegram.org/bot{TOKEN}"
 FILE_API = f"https://api.telegram.org/file/bot{TOKEN}"
 
@@ -14,8 +18,11 @@ def api(method, **kw):
     r.raise_for_status()
     return r.json()["result"]
 
-def say(text):
-    api("sendMessage", data={"chat_id": OWNER, "text": text})
+def say(user, text):
+    try:
+        api("sendMessage", data={"chat_id": user, "text": text})
+    except Exception as ex:
+        print("say failed:", ex)
 
 def to_sec(t):
     sec = 0
@@ -84,34 +91,29 @@ def process(audio, text):
 def main():
     updates = api("getUpdates", data={"timeout": 0})
     print("pending updates:", len(updates))
-    song = None
-    confirm_to = None
+    pending = {}   # آیدی فرستنده -> آهنگی که منتظر پیام بازه است
+    last_id = None
     for up in updates:
-        uid = up["update_id"]
+        last_id = up["update_id"]
         m = up.get("message")
-        kinds = [k for k in (m or {}) if k in ("audio", "text", "document", "voice", "video", "photo")]
-        print("message kinds:", kinds, "| sender is owner:", bool(m) and m.get("from", {}).get("id") == OWNER)
-        if not m or m.get("from", {}).get("id") != OWNER:
-            if song is None:
-                confirm_to = uid
+        if not m:
+            continue
+        user = m.get("from", {}).get("id")
+        if user not in OWNERS:
             continue
         if "audio" in m:
-            if song is not None:
-                confirm_to = uid - 1
-            song = m["audio"]
-            continue
-        if "text" in m and song is not None:
+            pending[user] = m["audio"]
+        elif "text" in m and user in pending:
+            audio = pending.pop(user)
             try:
-                process(song, m["text"])
-                say("✅ فرستاده شد")
+                process(audio, m["text"])
+                say(user, "✅ فرستاده شد")
             except Exception as ex:
-                say("❌ خطا: بازه رو درست بفرست (مثل 1:10-1:35) و آهنگ رو دوباره فوروارد کن.")
+                say(user, "❌ خطا: بازه رو درست بفرست (مثل 1:10-1:35) و آهنگ رو دوباره فوروارد کن.")
                 print("error:", ex)
-            song = None
-            confirm_to = uid
-        elif song is None:
-            confirm_to = uid
-    if confirm_to is not None:
-        api("getUpdates", data={"offset": confirm_to + 1, "timeout": 0})
+    for user in pending:
+        say(user, "⚠️ آهنگت رسید ولی پیام بازه نرسید. آهنگ رو دوباره بفرست و بعدش بازه رو بنویس.")
+    if last_id is not None:
+        api("getUpdates", data={"offset": last_id + 1, "timeout": 0})
 
 main()
